@@ -51,7 +51,7 @@ app.post('/yoomoney-webhook', async (req, res) => {
     // Формирование данных для отправки по email
     const mailOptions = {
       from: process.env.EMAIL_USER,
-      to: 'asdsasaddsa400@gmail.com',
+      to: 'iiinnnuuusss@gmail.com',
       subject: `Новый платеж от YooMoney`,
       text: `Получен новый платеж:
              ID пользователя: ${label}
