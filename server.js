@@ -1,7 +1,7 @@
 const express = require('express');
+const crypto = require('crypto');
 const nodemailer = require('nodemailer');
 const bodyParser = require('body-parser');
-const crypto = require('crypto');
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -10,40 +10,45 @@ app.use(bodyParser.json());
 // Порт для запуска сервера
 const PORT = process.env.PORT || 3000;
 
-// Настройка Nodemailer для отправки email
+// Конфигурация для отправки email через Nodemailer
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  service: 'gmail', // Замените на нужного email-провайдера
   auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
+    user: process.env.EMAIL_USER, // Ваша почта
+    pass: process.env.EMAIL_PASS  // Пароль почты
   }
 });
 
-// Функция для верификации хеша
-function verifyYooMoneyNotification(params, secret) {
-  const { notification_type, operation_id, amount, currency, datetime, sender, codepro, label, sha1_hash } = params;
+// Функция для проверки подписи уведомления от YooMoney
+function verifyYooMoneySignature(params, secretKey) {
+  const str = [
+    params.notification_type,
+    params.operation_id,
+    params.amount,
+    params.currency,
+    params.datetime,
+    params.sender,
+    params.codepro,
+    secretKey,
+    params.label
+  ].join('&');
 
-  // Формируем строку для хеширования
-  const strToHash = `${notification_type}&${operation_id}&${amount}&${currency}&${datetime}&${sender}&${codepro}&${secret}&${label}`;
-  
-  // Генерируем SHA-1 хеш
-  const hash = crypto.createHash('sha1').update(strToHash).digest('hex');
-
-  // Сравниваем с хешем от YooMoney
-  return hash === sha1_hash;
+  const hash = crypto.createHash('sha1').update(str).digest('hex');
+  return hash === params.sha1_hash;
 }
 
 // Эндпоинт для приема уведомлений
 app.post('/yoomoney-webhook', async (req, res) => {
   try {
-    const secret = process.env.YOOMONEY_SECRET; // Секретный ключ
-    if (!verifyYooMoneyNotification(req.body, secret)) {
-      return res.status(403).send('Invalid notification');
+    const { notification_type, operation_id, amount, datetime, sender, label, sha1_hash } = req.body;
+
+    // Проверка подписи уведомления
+    if (!verifyYooMoneySignature(req.body, process.env.YOOMONEY_SECRET_KEY)) {
+      console.warn("Неверная подпись уведомления");
+      return res.status(400).send("Invalid signature");
     }
 
-    const { label, amount, datetime, sender } = req.body;
-
-    // Формируем сообщение для отправки по email
+    // Формирование данных для отправки по email
     const mailOptions = {
       from: process.env.EMAIL_USER,
       to: 'asdsasaddsa400@gmail.com',
@@ -52,13 +57,14 @@ app.post('/yoomoney-webhook', async (req, res) => {
              ID пользователя: ${label}
              Сумма: ${amount} рублей
              Дата и время: ${datetime}
-             Отправитель: ${sender}`
+             Отправитель: ${sender}
+             ID операции: ${operation_id}`
     };
 
     // Отправляем email
     await transporter.sendMail(mailOptions);
 
-    // Отправляем ответ YooMoney, что уведомление получено
+    // Отправляем ответ YooMoney
     res.status(200).send('Notification received');
   } catch (error) {
     console.error('Ошибка при обработке уведомления:', error);
